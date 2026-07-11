@@ -11,8 +11,20 @@ website = "https://github.com/mlstr0m/node-peek"
 tags = ["Node", "Material", "Render"]
 blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2026 Aurélien - Résidence Principale (mlstr0m)"]
 
 # The add-on launches a separate Blender process (bpy.app.binary_path) to render
 # previews, and writes temporary .blend/.png files to the OS temp directory.
 [permissions]
 files = "Write temporary render results to the system temp directory"
+
+[build]
+paths_exclude_pattern = [
+    "__pycache__/",
+    ".git/",
+    ".gitignore",
+    ".DS_Store",
+    "/docs/",
+    "/screenshots/",
+    "*.zip",
+]
