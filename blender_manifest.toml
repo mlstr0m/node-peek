@@ -1,0 +1,18 @@
+schema_version = "1.0.0"
+
+id = "node_peek"
+version = "0.4.0"
+name = "Node Peek"
+tagline = "Live rendered thumbnail previews above shader nodes"
+maintainer = "mlstr0m <aurelien@residenceprincipale.net>"
+type = "add-on"
+
+website = "https://github.com/mlstr0m/node-peek"
+tags = ["Node", "Material", "Render"]
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+
+# The add-on launches a separate Blender process (bpy.app.binary_path) to render
+# previews, and writes temporary .blend/.png files to the OS temp directory.
+[permissions]
+files = "Write temporary render results to the system temp directory"
