@@ -17,7 +17,7 @@ This is an independent, clean-room implementation inspired by the commercial
 bl_info = {
     "name": "Node Peek",
     "author": "mlstr0m (Résidence Principale)",
-    "version": (0, 4, 1),
+    "version": (0, 4, 2),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar (N) > Node Peek  /  Ctrl+Shift+P",
     "description": "Rendered thumbnail previews above shader nodes, computed in a background process.",
@@ -693,7 +693,13 @@ def _collect_results():
         try:
             img = bpy.data.images.load(png_path, check_existing=False)
             img.name = "." + png_name  # dot prefix hides it from UI lists
-            img.colorspace_settings.name = 'sRGB'
+            try:
+                img.colorspace_settings.name = 'sRGB'
+            except (TypeError, ValueError):
+                # custom OCIO config without an 'sRGB' space: keep the default.
+                # Must NOT fall through to the corrupt-file path, which would
+                # delete + re-render this png in an endless loop.
+                pass
             new_tex[png_path] = gpu.texture.from_image(img)
             new_img[png_path] = img
             new_map[key] = png_path

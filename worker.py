@@ -55,7 +55,10 @@ def log(*msg):
     line = " ".join(str(m) for m in msg)
     if _LOG_PATH:
         try:
-            with open(_LOG_PATH, "a") as fh:
+            # explicit utf-8: the platform default (cp1252 on Windows) would
+            # raise UnicodeEncodeError on non-ASCII node/material names — and
+            # log() runs inside error handlers, where raising kills the worker
+            with open(_LOG_PATH, "a", encoding="utf-8", errors="replace") as fh:
                 fh.write(line + "\n")
         except OSError:
             pass
@@ -105,7 +108,10 @@ def setup_render(scene, res, engine):
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGBA"
     scene.render.image_settings.compression = 15
-    scene.view_settings.view_transform = "Standard"
+    try:
+        scene.view_settings.view_transform = "Standard"
+    except (TypeError, ValueError):
+        pass  # custom OCIO config without "Standard": use its default view
 
     # NOTE: use_persistent_data is deliberately OFF. We rewire the surface link
     # between every node render inside a job; if Cycles failed to re-sync that
