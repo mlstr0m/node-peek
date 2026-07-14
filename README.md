@@ -9,6 +9,10 @@ doing without plugging it into the output.
 Previews are computed by a separate background Blender process, so your UI stays
 responsive and **nothing is ever written into your .blend file**.
 
+![Procedural bark material with a preview above every node](screenshots/01-procedural-bark.png)
+
+![Meadow material mixing image textures, previews above each node](screenshots/02-meadow-material.png)
+
 > An independent, clean-room implementation inspired by the idea behind the
 > commercial "Node Preview" add-on. It shares none of that product's code.
 
