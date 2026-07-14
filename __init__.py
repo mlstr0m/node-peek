@@ -17,7 +17,7 @@ This is an independent, clean-room implementation inspired by the commercial
 bl_info = {
     "name": "Node Peek",
     "author": "mlstr0m (Résidence Principale)",
-    "version": (0, 4, 0),
+    "version": (0, 4, 1),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar (N) > Node Peek  /  Ctrl+Shift+P",
     "description": "Rendered thumbnail previews above shader nodes, computed in a background process.",
@@ -104,7 +104,10 @@ def _pref_redraw(_self, _context):
 
 
 class NODEPEEK_Preferences(bpy.types.AddonPreferences):
-    bl_idname = __name__
+    # extensions are imported as bl_ext.<repo>.<id>; __package__ resolves to
+    # that full path (and stays correct if code moves to a submodule), whereas
+    # __name__ would not. See the Blender extensions add-on docs.
+    bl_idname = __package__
 
     resolution: bpy.props.IntProperty(
         name="Thumbnail Resolution",
@@ -146,7 +149,7 @@ class NODEPEEK_Preferences(bpy.types.AddonPreferences):
 
 
 def _prefs():
-    return bpy.context.preferences.addons[__name__].preferences
+    return bpy.context.preferences.addons[__package__].preferences
 
 
 # ---------------------------------------------------------------------------

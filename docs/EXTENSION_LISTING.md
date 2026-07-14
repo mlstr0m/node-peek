@@ -9,7 +9,7 @@
 |---|---|
 | Name | Node Peek |
 | Tagline | Live rendered thumbnail previews above shader nodes |
-| Tags | Node, Material, Render |
+| Tags | Node, Material |
 | License | GPL-3.0-or-later |
 | Website | https://github.com/mlstr0m/node-peek |
 | Support / Bug tracker | https://github.com/mlstr0m/node-peek/issues |

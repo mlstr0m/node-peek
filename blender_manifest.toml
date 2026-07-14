@@ -1,14 +1,14 @@
 schema_version = "1.0.0"
 
 id = "node_peek"
-version = "0.4.0"
+version = "0.4.1"
 name = "Node Peek"
 tagline = "Live rendered thumbnail previews above shader nodes"
 maintainer = "mlstr0m <aurelien@residenceprincipale.net>"
 type = "add-on"
 
 website = "https://github.com/mlstr0m/node-peek"
-tags = ["Node", "Material", "Render"]
+tags = ["Node", "Material"]
 blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
 copyright = ["2026 Aurélien - Résidence Principale (mlstr0m)"]
