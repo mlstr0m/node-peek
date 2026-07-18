@@ -61,6 +61,9 @@ Requires **Blender 4.2+**. Works on macOS, Linux, and Windows.
 - Image texture datablocks are **cached across jobs**; renders land in the cache
   via atomic rename (a killed worker can't corrupt it); GPU textures are
   content-addressed and shared between nodes with identical output.
+- **Custom nodes from other add-ons** (`ShaderNodeCustomGroup`) are supported:
+  the worker registers lightweight stub types so they render exactly as they do
+  in your own scene — including everything downstream of them.
 
 | Situation | Cost |
 |---|---|
@@ -91,6 +94,9 @@ when you step in (the first found); with a single instance it is exact.
   Output **Displacement** input shows its bump/normal detail but not the
   displaced silhouette.
 - Collapsed (hidden) nodes are skipped.
+- Add-on nodes that are **not** custom groups (pure-Python nodes, nodes from
+  other render engines) can't be rendered by Cycles — in your own render
+  either — so they get no thumbnail rather than a misleading flat one.
 - View transform is forced to **Standard**, so previews won't match an
   AgX/Filmic look.
 - World and Geometry Nodes trees are not handled (Shader Editor only).

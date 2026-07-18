@@ -167,6 +167,23 @@ Two placement subtleties, both hard-won:
    Render to tmp, `os.replace` into cache, stream a partial response.
 7. `purge_material` + final `done` response.
 
+### Add-on custom nodes (stub types)
+
+The worker runs `--factory-startup`, so nodes defined by other add-ons
+(`ShaderNodeCustomGroup` subclasses) would load as `NodeUndefined`: their
+internal tree becomes unreachable and everything downstream evaluates flat.
+The fix (`ensure_stub_types`): the main process sends the `bl_idname` of every
+custom group node in the material; before loading, the worker registers an
+**empty** `ShaderNodeCustomGroup` stub per idname. Blender binds nodes to types
+by idname at load time, so the node becomes a functional group again — its
+internal tree is already in the lib as a dependency, and Cycles renders custom
+groups natively. No graph surgery, no code from the user's file is executed
+(idnames are plain strings; the class body is ours). A stub that fails to
+register degrades to the old behaviour for that type only. Nodes that stay
+undefined (pure-Python nodes, other engines' nodes) are skipped rather than
+given a misleading flat thumbnail — they don't render in the user's own
+Cycles render either.
+
 ### Why the odd-looking choices
 
 - **Cycles CPU, not EEVEE**: EEVEE renders black in `--background` (no GL/Metal

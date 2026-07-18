@@ -17,7 +17,7 @@ This is an independent, clean-room implementation inspired by the commercial
 bl_info = {
     "name": "Node Peek",
     "author": "mlstr0m (Résidence Principale)",
-    "version": (0, 4, 2),
+    "version": (0, 5, 0),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar (N) > Node Peek  /  Ctrl+Shift+P",
     "description": "Rendered thumbnail previews above shader nodes, computed in a background process.",
@@ -366,6 +366,29 @@ def _material_fingerprint(mat):
     return h.hexdigest()
 
 
+def _custom_node_types(mat):
+    """bl_idnames of add-on-defined group nodes (ShaderNodeCustomGroup
+    subclasses) anywhere in the material, nested groups included. The worker
+    runs --factory-startup, so it registers stub types for these — otherwise
+    they load as NodeUndefined and everything downstream renders flat."""
+    found = set()
+    seen = set()
+
+    def walk(tree):
+        if tree is None or tree.name_full in seen:
+            return
+        seen.add(tree.name_full)
+        for node in tree.nodes:
+            subtree = getattr(node, "node_tree", None)
+            if subtree is not None:
+                if node.bl_idname != 'ShaderNodeGroup':
+                    found.add(node.bl_idname)
+                walk(subtree)
+
+    walk(mat.node_tree)
+    return sorted(found)
+
+
 # ---------------------------------------------------------------------------
 # Background rendering
 # ---------------------------------------------------------------------------
@@ -556,6 +579,7 @@ def _request_render(context):
         "force": _force_next,
         "priority": priority,
         "path": path,
+        "custom_types": _custom_node_types(mat),
     }
     proc = _worker["proc"]
     try:

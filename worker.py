@@ -50,6 +50,10 @@ _LOG_PATH = None
 _image_cache = {}
 _IMAGE_CACHE_MAX = 16
 
+# add-on custom node types we registered a stub class for (see ensure_stub_types)
+_stub_types = set()
+_stub_failed = set()
+
 
 def log(*msg):
     line = " ".join(str(m) for m in msg)
@@ -274,6 +278,11 @@ def pick_output_socket(node):
 
 
 def previewable(node):
+    if node.bl_idname == "NodeUndefined":
+        # an add-on node type we couldn't stub (pure-Python node, other render
+        # engine...): it evaluates to nothing in Cycles — here AND in the
+        # user's own render. No thumbnail is honest; a flat one would mislead.
+        return False
     if node.type in {"FRAME", "REROUTE", "GROUP_INPUT", "GROUP_OUTPUT"}:
         return False
     if node.type in {"OUTPUT_MATERIAL", "OUTPUT_WORLD", "OUTPUT_LIGHT"}:
@@ -410,6 +419,40 @@ def node_signature(node, sig_cache):
 # ---------------------------------------------------------------------------
 # Material (re)loading + image datablock cache
 # ---------------------------------------------------------------------------
+
+def ensure_stub_types(idnames):
+    """Register empty ShaderNodeCustomGroup stubs for add-on node types that
+    don't exist in this --factory-startup process.
+
+    Blender binds nodes to their type by bl_idname at load time. Without the
+    add-on, custom nodes load as NodeUndefined: their internal tree becomes
+    unreachable and everything downstream evaluates flat. A do-nothing stub
+    with the right bl_idname makes the node a functional custom group again —
+    its internal tree is already in the lib (written as a dependency), and
+    Cycles renders custom groups natively, so previews match what the user
+    sees in their own render.
+
+    idnames are plain strings taken from the user's material; no code from
+    the file is executed — the class body is entirely ours."""
+    for idname in idnames:
+        if not idname or idname in _stub_types or idname in _stub_failed:
+            continue
+        if hasattr(bpy.types, idname):
+            _stub_types.add(idname)  # already a real registered type
+            continue
+        try:
+            cls = type(f"NodePeekStub{len(_stub_types)}",
+                       (bpy.types.ShaderNodeCustomGroup,),
+                       {"bl_idname": idname, "bl_label": idname})
+            bpy.utils.register_class(cls)
+            _stub_types.add(idname)
+            log("registered stub node type:", idname)
+        except Exception as exc:  # noqa: BLE001
+            # this type keeps today's behaviour (skipped, see previewable());
+            # never worse than before the feature existed
+            _stub_failed.add(idname)
+            log("stub registration failed:", idname, exc)
+
 
 def load_material(lib_path, material_name):
     before = set(bpy.data.materials.keys())
@@ -631,6 +674,9 @@ def process(preview, req, cache_dir):
     priority = req.get("priority", [])
 
     setup_render(preview.scene, res, engine)
+
+    # bind add-on custom node types BEFORE loading, or they come in undefined
+    ensure_stub_types(req.get("custom_types") or [])
 
     material = load_material(req["lib"], mat_name)
     if material is None or material.node_tree is None:
