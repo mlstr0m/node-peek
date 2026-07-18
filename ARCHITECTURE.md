@@ -232,6 +232,10 @@ Cycles render either.
   first matching editor wins.
 - A group instanced several times in the *same* parent tree resolves to the
   first instance (`space.path` doesn't expose which instance was entered).
+- Tab-editing *inside an add-on custom group node* shows no interior previews:
+  stub instances don't sync their sockets with interface changes, so the
+  socket-bubbling used for in-group previews bails out (deliberately — a wrong
+  thumbnail would be worse than none).
 - Displacement output isn't previewed (surface only).
 - Packed-image repaints don't invalidate (no mtime); Refresh does.
 - View transform is Standard; AgX/Filmic looks differ.

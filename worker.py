@@ -621,7 +621,11 @@ def bubble_socket(chain, target_socket, is_shader):
         ns = group_node.outputs.get("__np_out")
         if ns is None and len(group_node.outputs):
             ns = group_node.outputs[-1]  # not yet name-indexed: take the newest
-        if ns is None:
+        # verify we really got OUR socket: custom group nodes bound to a stub
+        # don't auto-sync instance sockets with interface changes, and the
+        # fallback would silently pick a DIFFERENT socket — a wrong thumbnail
+        # is worse than none.
+        if ns is None or ns.name != "__np_out":
             _tear_down(items)
             return None, []
         source = ns
