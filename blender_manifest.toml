@@ -26,5 +26,6 @@ paths_exclude_pattern = [
     ".DS_Store",
     "/docs/",
     "/screenshots/",
+    "/tests/",
     "*.zip",
 ]
