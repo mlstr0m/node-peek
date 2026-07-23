@@ -152,12 +152,16 @@ def set_samples(scene, flat):
 # ---------------------------------------------------------------------------
 
 class PreviewScene:
-    def __init__(self, scene, plane, sphere, ortho_cam, persp_cam):
+    def __init__(self, scene, plane, sphere, ortho_cam, persp_cam,
+                 composite, direct_output, normalized_output):
         self.scene = scene
         self.plane = plane
         self.sphere = sphere
         self.ortho_cam = ortho_cam
         self.persp_cam = persp_cam
+        self.composite = composite
+        self.direct_output = direct_output
+        self.normalized_output = normalized_output
 
     def use_flat(self):
         self.plane.hide_render = False
@@ -173,6 +177,15 @@ class PreviewScene:
         for obj in (self.plane, self.sphere):
             obj.data.materials.clear()
             obj.data.materials.append(material)
+
+    def set_normalize_data(self, enabled):
+        """Select the compositor output used for this one preview render."""
+        tree = self.composite.id_data
+        for link in list(self.composite.inputs["Image"].links):
+            tree.links.remove(link)
+        tree.links.new(
+            self.normalized_output if enabled else self.direct_output,
+            self.composite.inputs["Image"])
 
 
 def build_preview_scene():
@@ -250,7 +263,45 @@ def build_preview_scene():
         bg.inputs[1].default_value = 1.0
     scene.world = world
 
-    return PreviewScene(scene, plane, sphere, ortho_cam, persp_cam)
+    # The render result remains float until Blender writes the PNG.  Keep this
+    # compositor graph alive for the worker lifetime and only switch its final
+    # link per preview.  Normalize is scalar-only, hence the RGB split.
+    scene.use_nodes = True
+    # Blender 5.2 moved compositor trees from Scene.node_tree to an explicit
+    # compositor node group, and replaced Composite with Group Output. Keep
+    # both layouts working: the extension supports Blender 4.2 and newer.
+    comp = getattr(scene, "node_tree", None)
+    modern_compositor = comp is None
+    if modern_compositor:
+        comp = bpy.data.node_groups.new("_np_compositor", "CompositorNodeTree")
+        scene.compositing_node_group = comp
+    comp.nodes.clear()
+    layers = comp.nodes.new("CompositorNodeRLayers")
+    if modern_compositor:
+        comp.interface.new_socket(name="Image", in_out='OUTPUT',
+                                  socket_type="NodeSocketColor")
+        output = comp.nodes.new("NodeGroupOutput")
+        separate = comp.nodes.new("CompositorNodeSeparateColor")
+        combine = comp.nodes.new("CompositorNodeCombineColor")
+        channels = (("Red", "Green", "Blue"), "Alpha")
+    else:
+        output = comp.nodes.new("CompositorNodeComposite")
+        separate = comp.nodes.new("CompositorNodeSepRGBA")
+        combine = comp.nodes.new("CompositorNodeCombRGBA")
+        channels = (("R", "G", "B"), "A")
+    normalizers = [comp.nodes.new("CompositorNodeNormalize") for _ in range(3)]
+    comp.links.new(layers.outputs["Image"], separate.inputs["Image"])
+    rgb_channels, alpha_channel = channels
+    for channel, normalizer in zip(rgb_channels, normalizers):
+        comp.links.new(separate.outputs[channel], normalizer.inputs[0])
+        comp.links.new(normalizer.outputs[0], combine.inputs[channel])
+    comp.links.new(separate.outputs[alpha_channel], combine.inputs[alpha_channel])
+    # Start with the unmodified output. render_socket selects the appropriate
+    # branch before every render, including shader previews.
+    comp.links.new(layers.outputs["Image"], output.inputs["Image"])
+
+    return PreviewScene(scene, plane, sphere, ortho_cam, persp_cam, output,
+                        layers.outputs["Image"], combine.outputs["Image"])
 
 
 # ---------------------------------------------------------------------------
@@ -633,7 +684,7 @@ def bubble_socket(chain, target_socket, is_shader):
 
 
 def render_socket(preview, surface_in, emission, source, is_shader,
-                  tmp_path, png_path):
+                  tmp_path, png_path, normalize_data=False):
     """Wire ``source`` (a socket in the material tree) into the preview output,
     render, and atomically move the result into the cache."""
     mt = surface_in.id_data
@@ -648,6 +699,9 @@ def render_socket(preview, surface_in, emission, source, is_shader,
         mt.links.new(source, emission.inputs["Color"])
         mt.links.new(emission.outputs["Emission"], surface_in)
         preview.use_flat()
+    # Shader previews depict a lit material, not raw node data. Normalizing
+    # their final image would distort lighting, reflections and the backdrop.
+    preview.set_normalize_data(normalize_data and not is_shader)
     set_samples(preview.scene, not is_shader)
     preview.scene.render.filepath = tmp_path
     bpy.ops.render.render(write_still=True, scene=preview.scene.name)
@@ -674,6 +728,7 @@ def process(preview, req, cache_dir):
     mat_name = req["material"]
     res = int(req.get("res", 150))
     engine = req.get("engine", "CYCLES")
+    normalize_data = bool(req.get("normalize_data_previews", False))
     force = bool(req.get("force", False))
     priority = req.get("priority", [])
 
@@ -716,8 +771,10 @@ def process(preview, req, cache_dir):
         socket = pick_output_socket(node)
         if socket is None:
             continue
+        target_salt = salt + ("|n1" if normalize_data and socket.type != "SHADER"
+                             else "")
         digest = hashlib.md5(
-            (node_signature(node, sig_cache) + salt).encode()).hexdigest()[:16]
+            (node_signature(node, sig_cache) + target_salt).encode()).hexdigest()[:16]
         targets.append((node.name, node.name, socket.type == "SHADER",
                         f"{digest}.png", None, node, socket))
 
@@ -735,9 +792,11 @@ def process(preview, req, cache_dir):
                 socket = pick_output_socket(node)
                 if socket is None:
                     continue
+                target_salt = salt + ("|n1" if normalize_data
+                                     and socket.type != "SHADER" else "")
                 digest = hashlib.md5(
                     (node_signature(node, tcache) + "|I:" + instance_sig
-                     + salt).encode()).hexdigest()[:16]
+                     + target_salt).encode()).hexdigest()[:16]
                 key = pathkey + PATH_SEP + node.name
                 targets.append((key, node.name, socket.type == "SHADER",
                                 f"{digest}.png", chain, node, socket))
@@ -784,7 +843,7 @@ def process(preview, req, cache_dir):
                     previews.pop(key, None)
                     continue
             render_socket(preview, surface_in, emission, source, is_shader,
-                          tmp_path, png_path)
+                          tmp_path, png_path, normalize_data)
             rendered += 1
             fresh.append(png_name)
             # stream: let the add-on display this thumbnail right away

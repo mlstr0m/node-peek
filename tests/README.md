@@ -14,7 +14,7 @@ DIR=$(mktemp -d)
 python3 tests/e2e_real.py "$BL" worker.py "$DIR"
 ```
 
-Expected: 8 × `PASS`, ending with `E2E_REAL_OK`. The printed PNG paths can be
+Expected: 11 × `PASS`, ending with `E2E_REAL_OK`. The printed PNG paths can be
 inspected by eye (coarse vs fine checker, gradient, sphere).
 
 What it verifies:
@@ -25,6 +25,8 @@ What it verifies:
 - pure-Python nodes (no internal tree) are skipped, not given a flat thumbnail;
 - a bogus stub idname doesn't break the job;
 - a **plain material** in the same worker session takes the unchanged fast path.
+- normalization creates a distinct preview for HDR data while a shader preview
+  reuses its existing cache entry unchanged.
 
 ## Manual: live check in your own Blender
 

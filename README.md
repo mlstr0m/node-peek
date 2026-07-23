@@ -39,6 +39,7 @@ Requires **Blender 4.2+**. Works on macOS, Linux, and Windows.
 | Thumbnail Resolution | 32–512 px render size per node |
 | Update Delay | Debounce after the last edit before re-rendering |
 | Render Engine | Cycles (reliable) or EEVEE (experimental — often black in background) |
+| Normalize Data Previews | Stretches each RGB channel of maps to reveal values outside 0–1; shader previews stay unchanged |
 
 ## How it works
 
@@ -99,6 +100,8 @@ when you step in (the first found); with a single instance it is exact.
   either — so they get no thumbnail rather than a misleading flat one.
 - View transform is forced to **Standard**, so previews won't match an
   AgX/Filmic look.
+- **Normalize Data Previews** is an inspection aid, not colour-accurate: it
+  rescales each RGB channel independently and can change colour relationships.
 - World and Geometry Nodes trees are not handled (Shader Editor only).
 
 ## Troubleshooting

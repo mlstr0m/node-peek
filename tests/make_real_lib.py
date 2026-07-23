@@ -111,6 +111,22 @@ bsdf2 = next(n for n in nt2.nodes if n.type == 'BSDF_PRINCIPLED')
 chk = nt2.nodes.new("ShaderNodeTexChecker"); chk.name = "PlainChecker"
 nt2.links.new(chk.outputs["Color"], bsdf2.inputs["Base Color"])
 
+# HDR scalar data: its flat preview is deliberately clipped with the normal
+# display transform, so e2e_real can prove the normalize compositor branch
+# creates a different image without affecting the connected shader preview.
+mat3 = bpy.data.materials.new("NormalizeMat")
+mat3.use_nodes = True
+nt3 = mat3.node_tree
+bsdf3 = next(n for n in nt3.nodes if n.type == 'BSDF_PRINCIPLED')
+coord = nt3.nodes.new("ShaderNodeTexCoord"); coord.name = "UV"
+grad2 = nt3.nodes.new("ShaderNodeTexGradient"); grad2.name = "Gradient"
+amplify = nt3.nodes.new("ShaderNodeMath"); amplify.name = "Amplify"
+amplify.operation = 'MULTIPLY'
+amplify.inputs[1].default_value = 4.0
+nt3.links.new(coord.outputs["UV"], grad2.inputs["Vector"])
+nt3.links.new(grad2.outputs["Fac"], amplify.inputs[0])
+nt3.links.new(amplify.outputs[0], bsdf3.inputs["Base Color"])
+
 # the REAL production collector
 customs = node_peek._custom_node_types(mat)
 customs_plain = node_peek._custom_node_types(mat2)
@@ -119,7 +135,7 @@ print("CUSTOM_TYPES PlainMat:", customs_plain)
 assert customs == ["SimGradient", "SimScaledChecker"], customs
 assert customs_plain == [], customs_plain
 
-bpy.data.libraries.write(outdir + "/real.blend", {mat, mat2},
+bpy.data.libraries.write(outdir + "/real.blend", {mat, mat2, mat3},
                          path_remap='ABSOLUTE', fake_user=True)
 with open(outdir + "/customs.json", "w") as fh:
     json.dump(customs, fh)

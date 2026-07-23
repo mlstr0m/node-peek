@@ -17,7 +17,7 @@ This is an independent, clean-room implementation inspired by the commercial
 bl_info = {
     "name": "Node Peek",
     "author": "mlstr0m (Résidence Principale)",
-    "version": (0, 5, 1),
+    "version": (0, 5, 2),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar (N) > Node Peek  /  Ctrl+Shift+P",
     "description": "Rendered thumbnail previews above shader nodes, computed in a background process.",
@@ -138,6 +138,14 @@ class NODEPEEK_Preferences(bpy.types.AddonPreferences):
         default='CYCLES',
         update=_pref_rerender,
     )
+    normalize_data_previews: bpy.props.BoolProperty(
+        name="Normalize Data Previews",
+        description="Stretch each RGB channel of non-shader previews to its "
+                    "visible range. For inspection only: it changes colour "
+                    "relationships",
+        default=False,
+        update=_pref_rerender,
+    )
 
     def draw(self, context):
         layout = self.layout
@@ -145,6 +153,7 @@ class NODEPEEK_Preferences(bpy.types.AddonPreferences):
         layout.prop(self, "resolution")
         layout.prop(self, "debounce")
         layout.prop(self, "engine")
+        layout.prop(self, "normalize_data_previews")
         layout.label(text="Toggle preview on selected nodes: Ctrl+Shift+P", icon='INFO')
 
 
@@ -535,6 +544,7 @@ def _request_render(context):
     space, path = _find_shader_editor(mat)
     prefs = _prefs()
     fp = (_material_fingerprint(mat) + f"|r{prefs.resolution}|e{prefs.engine}"
+          + f"|n{int(prefs.normalize_data_previews)}"
           + "|p" + PATH_SEP.join(path))
     if not _force_next and fp == _last_fingerprint:
         # depsgraph fired but nothing preview-relevant changed (e.g. node
@@ -576,6 +586,7 @@ def _request_render(context):
         "material": mat.name,
         "res": prefs.resolution,
         "engine": prefs.engine,
+        "normalize_data_previews": prefs.normalize_data_previews,
         "force": _force_next,
         "priority": priority,
         "path": path,
@@ -968,6 +979,7 @@ class NODEPEEK_PT_panel(bpy.types.Panel):
         prefs = _prefs()
         layout.prop(prefs, "visible_by_default")
         layout.prop(prefs, "resolution")
+        layout.prop(prefs, "normalize_data_previews")
         layout.separator()
         layout.operator("node.node_peek_refresh", icon='FILE_REFRESH')
         layout.operator("node.node_peek_toggle_selected", icon='HIDE_OFF')

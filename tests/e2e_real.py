@@ -28,11 +28,12 @@ proc = subprocess.Popen(
     stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
 
 
-def run_job(seq, material, custom_types):
+def run_job(seq, material, custom_types, normalize_data_previews=False):
     req = {"seq": seq, "job": job, "lib": os.path.join(d, "real.blend"),
            "material": material, "res": 96, "engine": "CYCLES",
            "force": False, "priority": [], "path": [],
-           "custom_types": custom_types}
+           "custom_types": custom_types,
+           "normalize_data_previews": normalize_data_previews}
     proc.stdin.write(json.dumps(req) + "\n")
     proc.stdin.flush()
     deadline = time.time() + 240
@@ -52,6 +53,10 @@ def run_job(seq, material, custom_types):
 r1 = run_job(1, "RealSim", customs + ["Bogus Type ###"])
 # job 2: plain material (regression path, same worker session)
 r2 = run_job(2, "PlainMat", [])
+# jobs 3/4: normalize a deliberately HDR data map. The shader preview should
+# reuse its exact cache entry; only the flat data preview gets a new image.
+r3 = run_job(3, "NormalizeMat", [])
+r4 = run_job(4, "NormalizeMat", [], normalize_data_previews=True)
 
 proc.stdin.write(json.dumps({"stop": True}) + "\n")
 proc.stdin.flush()
@@ -59,12 +64,14 @@ proc.stdin.close()
 proc.wait(timeout=15)
 
 ok = True
-if r1 is None or r2 is None:
-    print("E2E FAIL: missing response", bool(r1), bool(r2))
+if r1 is None or r2 is None or r3 is None or r4 is None:
+    print("E2E FAIL: missing response", bool(r1), bool(r2), bool(r3), bool(r4))
     sys.exit(1)
 
 p1 = r1["previews"]
 p2 = r2["previews"]
+p3 = r3["previews"]
+p4 = r4["previews"]
 print("JOB1 previews:", sorted(p1))
 print("JOB2 previews:", sorted(p2))
 
@@ -83,6 +90,18 @@ check("Note" not in p1, "pure-python node honestly skipped")
 check("AfterNote" in p1, "builtin downstream of unrenderable still previewed")
 check("PlainChecker" in p2 and "Principled BSDF" in p2,
       "plain material regression ok")
+check("Amplify" in p3 and "Amplify" in p4, "HDR data preview rendered")
+check(p3.get("Principled BSDF") == p4.get("Principled BSDF"),
+      "shader preview cache is unaffected by normalization")
+try:
+    with open(os.path.join(cache, p3["Amplify"]), "rb") as fh:
+        raw_png = fh.read()
+    with open(os.path.join(cache, p4["Amplify"]), "rb") as fh:
+        normalized_png = fh.read()
+    check(raw_png != normalized_png,
+          "normalized HDR data preview differs from clipped preview")
+except (KeyError, OSError):
+    check(False, "normalized HDR data preview differs from clipped preview")
 
 # expose file paths for visual inspection
 for k in ("CheckerA", "CheckerB", "Grad", "Wrap", "InvertA", "Principled BSDF"):
