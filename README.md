@@ -39,7 +39,7 @@ Requires **Blender 4.2+**. Works on macOS, Linux, and Windows.
 | Thumbnail Resolution | 32–512 px render size per node |
 | Update Delay | Debounce after the last edit before re-rendering |
 | Render Engine | Cycles (reliable) or EEVEE (experimental — often black in background) |
-| Normalize Data Previews | Stretches each RGB channel of maps to reveal values outside 0–1; shader previews stay unchanged |
+| Normalize Out-of-Range Data | Normalizes only RGB channels outside 0–1; in-range maps and shader previews stay unchanged |
 
 ## How it works
 
@@ -57,10 +57,11 @@ Requires **Blender 4.2+**. Works on macOS, Linux, and Windows.
 - Results are **streamed**: the node you're editing renders first and appears
   immediately, without waiting for the whole job.
 - Texture/color/vector nodes render as a flat **map** (orthographic plane +
-  emission, 1 sample — noise-free). When normalization is enabled, each RGB
-  channel is mapped to its visible range before PNG conversion. Real shader
-  nodes render as a shaded **sphere** (adaptive sampling + denoise) and bypass
-  normalization.
+  emission, 1 sample — noise-free). When normalization is enabled, only RGB
+  channels with values outside 0–1 are mapped to their visible range before
+  PNG conversion; maps already inside that range remain visually unchanged.
+  Real shader nodes render as a shaded **sphere** (adaptive sampling + denoise)
+  and always bypass normalization.
 - Image texture datablocks are **cached across jobs**; renders land in the cache
   via atomic rename (a killed worker can't corrupt it); GPU textures are
   content-addressed and shared between nodes with identical output.
@@ -102,8 +103,9 @@ when you step in (the first found); with a single instance it is exact.
   either — so they get no thumbnail rather than a misleading flat one.
 - View transform is forced to **Standard**, so previews won't match an
   AgX/Filmic look.
-- **Normalize Data Previews** is an inspection aid, not colour-accurate: it
-  rescales each RGB channel independently and can change colour relationships.
+- **Normalize Out-of-Range Data** is an inspection aid, not colour-accurate:
+  channels outside 0–1 are rescaled independently and can change colour
+  relationships.
 - World and Geometry Nodes trees are not handled (Shader Editor only).
 
 ## Troubleshooting

@@ -96,22 +96,27 @@ check(p3.get("Principled BSDF") == p4.get("Principled BSDF"),
 try:
     raw_png = os.path.join(cache, p3["Amplify"])
     normalized_png = os.path.join(cache, p4["Amplify"])
+    in_range_raw_png = os.path.join(cache, p3["Gradient"])
+    in_range_normalized_png = os.path.join(cache, p4["Gradient"])
     verifier = os.path.join(os.path.dirname(__file__),
                             "verify_normalized_preview.py")
     verified = subprocess.run(
         [blender, "--background", "--factory-startup",
          "--python-exit-code", "1", "--python", verifier,
-         "--", raw_png, normalized_png],
+         "--", raw_png, normalized_png,
+         in_range_raw_png, in_range_normalized_png],
         capture_output=True, text=True, timeout=60)
     if verified.stdout:
         print(verified.stdout.strip())
     if verified.returncode and verified.stderr:
         print(verified.stderr.strip())
     check(verified.returncode == 0,
-          "normalized HDR data preview has the expected full-frame range")
-except (KeyError, OSError):
+          "normalization fixes HDR data and preserves in-range data")
+except (KeyError, OSError, subprocess.TimeoutExpired):
     check(False,
-          "normalized HDR data preview has the expected full-frame range")
+          "normalization fixes HDR data and preserves in-range data")
+check(not any(name.endswith(".linear.exr") for name in os.listdir(cache)),
+      "temporary float renders cleaned")
 
 # expose file paths for visual inspection
 for k in ("CheckerA", "CheckerB", "Grad", "Wrap", "InvertA", "Principled BSDF"):

@@ -36,13 +36,14 @@ import json
 import math
 import hashlib
 import argparse
+from array import array
 
 import bpy
 
 
 # Bump whenever the preview scene (lighting, camera, world, geometry) changes,
 # so previously cached PNGs are invalidated automatically.
-SCENE_VERSION = 3
+SCENE_VERSION = 4
 
 _LOG_PATH = None
 
@@ -152,16 +153,12 @@ def set_samples(scene, flat):
 # ---------------------------------------------------------------------------
 
 class PreviewScene:
-    def __init__(self, scene, plane, sphere, ortho_cam, persp_cam,
-                 composite, direct_output, normalized_output):
+    def __init__(self, scene, plane, sphere, ortho_cam, persp_cam):
         self.scene = scene
         self.plane = plane
         self.sphere = sphere
         self.ortho_cam = ortho_cam
         self.persp_cam = persp_cam
-        self.composite = composite
-        self.direct_output = direct_output
-        self.normalized_output = normalized_output
 
     def use_flat(self):
         self.plane.hide_render = False
@@ -177,15 +174,6 @@ class PreviewScene:
         for obj in (self.plane, self.sphere):
             obj.data.materials.clear()
             obj.data.materials.append(material)
-
-    def set_normalize_data(self, enabled):
-        """Select the compositor output used for this one preview render."""
-        tree = self.composite.id_data
-        for link in list(self.composite.inputs["Image"].links):
-            tree.links.remove(link)
-        tree.links.new(
-            self.normalized_output if enabled else self.direct_output,
-            self.composite.inputs["Image"])
 
 
 def build_preview_scene():
@@ -263,50 +251,7 @@ def build_preview_scene():
         bg.inputs[1].default_value = 1.0
     scene.world = world
 
-    # The render result remains float until Blender writes the PNG.  Keep this
-    # compositor graph alive for the worker lifetime and only switch its final
-    # link per preview.  Normalize is scalar-only, hence the RGB split.
-    scene.use_nodes = True
-    # Blender 5.2 moved compositor trees from Scene.node_tree to an explicit
-    # compositor node group, and replaced Composite with Group Output. Keep
-    # both layouts working: the extension supports Blender 4.2 and newer.
-    comp = getattr(scene, "node_tree", None)
-    modern_compositor = comp is None
-    if modern_compositor:
-        comp = bpy.data.node_groups.new("_np_compositor", "CompositorNodeTree")
-        scene.compositing_node_group = comp
-    comp.nodes.clear()
-    layers = comp.nodes.new("CompositorNodeRLayers")
-    # A Render Layers node defaults to Blender's startup "Scene" when it lives
-    # in the standalone compositor group introduced in Blender 5.2. Point it
-    # at our private preview scene explicitly, or every thumbnail contains the
-    # default cube instead of Node Peek's plane/sphere.
-    layers.scene = scene
-    if modern_compositor:
-        comp.interface.new_socket(name="Image", in_out='OUTPUT',
-                                  socket_type="NodeSocketColor")
-        output = comp.nodes.new("NodeGroupOutput")
-        separate = comp.nodes.new("CompositorNodeSeparateColor")
-        combine = comp.nodes.new("CompositorNodeCombineColor")
-        channels = (("Red", "Green", "Blue"), "Alpha")
-    else:
-        output = comp.nodes.new("CompositorNodeComposite")
-        separate = comp.nodes.new("CompositorNodeSepRGBA")
-        combine = comp.nodes.new("CompositorNodeCombRGBA")
-        channels = (("R", "G", "B"), "A")
-    normalizers = [comp.nodes.new("CompositorNodeNormalize") for _ in range(3)]
-    comp.links.new(layers.outputs["Image"], separate.inputs["Image"])
-    rgb_channels, alpha_channel = channels
-    for channel, normalizer in zip(rgb_channels, normalizers):
-        comp.links.new(separate.outputs[channel], normalizer.inputs[0])
-        comp.links.new(normalizer.outputs[0], combine.inputs[channel])
-    comp.links.new(separate.outputs[alpha_channel], combine.inputs[alpha_channel])
-    # Start with the unmodified output. render_socket selects the appropriate
-    # branch before every render, including shader previews.
-    comp.links.new(layers.outputs["Image"], output.inputs["Image"])
-
-    return PreviewScene(scene, plane, sphere, ortho_cam, persp_cam, output,
-                        layers.outputs["Image"], combine.outputs["Image"])
+    return PreviewScene(scene, plane, sphere, ortho_cam, persp_cam)
 
 
 # ---------------------------------------------------------------------------
@@ -688,6 +633,95 @@ def bubble_socket(chain, target_socket, is_shader):
     return source, items
 
 
+def _save_data_render(image, scene, tmp_path):
+    """Save a float render, normalizing only RGB channels outside 0..1.
+
+    The input image is a scene-linear EXR. Keeping the decision here, before
+    PNG conversion and view transform, means ordinary 0..1 maps remain visually
+    unchanged while HDR/negative channels become readable. No Compositor scene
+    routing is involved.
+    """
+    width, height = image.size
+    pixels = array("f", [0.0]) * (width * height * 4)
+    image.pixels.foreach_get(pixels)
+
+    bounds = []
+    needs_normalization = []
+    for channel in range(3):
+        values = pixels[channel::4]
+        lo = min(values)
+        hi = max(values)
+        bounds.append((lo, hi))
+        needs_normalization.append(lo < -1.0e-6 or hi > 1.0 + 1.0e-6)
+
+    if not any(needs_normalization):
+        image.save_render(tmp_path, scene=scene)
+        return False
+
+    for channel, needed in enumerate(needs_normalization):
+        if not needed:
+            continue
+        lo, hi = bounds[channel]
+        span = hi - lo
+        if span <= 1.0e-12:
+            replacement = 1.0 if hi > 1.0 else 0.0
+            for index in range(channel, len(pixels), 4):
+                pixels[index] = replacement
+        else:
+            inv_span = 1.0 / span
+            for index in range(channel, len(pixels), 4):
+                pixels[index] = (pixels[index] - lo) * inv_span
+
+    normalized = bpy.data.images.new(
+        "_np_normalized", width=width, height=height,
+        alpha=True, float_buffer=True)
+    try:
+        try:
+            normalized.colorspace_settings.name = image.colorspace_settings.name
+        except (TypeError, ValueError):
+            pass
+        normalized.pixels.foreach_set(pixels)
+        normalized.save_render(tmp_path, scene=scene)
+    finally:
+        bpy.data.images.remove(normalized)
+    return True
+
+
+def _render_normalizable_data(scene, tmp_path):
+    """Render a data map to float EXR, inspect it, then save the final PNG."""
+    linear_path = tmp_path + ".linear.exr"
+    settings = scene.render.image_settings
+    old_path = scene.render.filepath
+    old_format = settings.file_format
+    old_mode = settings.color_mode
+    old_depth = settings.color_depth
+    old_codec = settings.exr_codec
+    image = None
+    try:
+        try:
+            settings.file_format = "OPEN_EXR"
+            settings.color_mode = "RGBA"
+            settings.color_depth = "32"
+            settings.exr_codec = "ZIP"
+            scene.render.filepath = linear_path
+            bpy.ops.render.render(write_still=True, scene=scene.name)
+        finally:
+            settings.file_format = old_format
+            settings.color_mode = old_mode
+            settings.color_depth = old_depth
+            settings.exr_codec = old_codec
+            scene.render.filepath = old_path
+        image = bpy.data.images.load(linear_path, check_existing=False)
+        return _save_data_render(image, scene, tmp_path)
+    finally:
+        if image is not None:
+            bpy.data.images.remove(image)
+        try:
+            os.remove(linear_path)
+        except OSError:
+            pass
+
+
 def render_socket(preview, surface_in, emission, source, is_shader,
                   tmp_path, png_path, normalize_data=False):
     """Wire ``source`` (a socket in the material tree) into the preview output,
@@ -704,12 +738,12 @@ def render_socket(preview, surface_in, emission, source, is_shader,
         mt.links.new(source, emission.inputs["Color"])
         mt.links.new(emission.outputs["Emission"], surface_in)
         preview.use_flat()
-    # Shader previews depict a lit material, not raw node data. Normalizing
-    # their final image would distort lighting, reflections and the backdrop.
-    preview.set_normalize_data(normalize_data and not is_shader)
     set_samples(preview.scene, not is_shader)
     preview.scene.render.filepath = tmp_path
-    bpy.ops.render.render(write_still=True, scene=preview.scene.name)
+    if normalize_data and not is_shader:
+        _render_normalizable_data(preview.scene, tmp_path)
+    else:
+        bpy.ops.render.render(write_still=True, scene=preview.scene.name)
     os.replace(tmp_path, png_path)
 
 

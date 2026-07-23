@@ -2,31 +2,33 @@
 
 Run by e2e_real.py in a clean Blender process:
     blender --background --factory-startup --python-exit-code 1 \
-        --python verify_normalized_preview.py -- RAW.png NORMALIZED.png
+        --python verify_normalized_preview.py -- \
+        RAW.png NORMALIZED.png IN_RANGE_RAW.png IN_RANGE_NORMALIZED.png
 """
 from array import array
-import os
 import sys
 
 import bpy
 
 
 argv = sys.argv[sys.argv.index("--") + 1:]
-raw_path, normalized_path = argv
+raw_path, normalized_path, in_range_raw_path, in_range_normalized_path = argv
 
 
-def luminance_map(path):
+def image_data(path):
     image = bpy.data.images.load(path, check_existing=False)
     width, height = image.size
     pixels = array("f", [0.0]) * (width * height * 4)
     image.pixels.foreach_get(pixels)
     values = []
+    rgb = []
     for i in range(0, len(pixels), 4):
+        rgb.extend(pixels[i:i + 3])
         values.append(
             0.2126 * pixels[i]
             + 0.7152 * pixels[i + 1]
             + 0.0722 * pixels[i + 2])
-    return width, height, values
+    return width, height, values, rgb
 
 
 def edge_mean(values, width, height, edge):
@@ -47,10 +49,17 @@ def edge_mean(values, width, height, edge):
     return sum(samples) / len(samples)
 
 
-raw_width, raw_height, raw = luminance_map(raw_path)
-norm_width, norm_height, normalized = luminance_map(normalized_path)
+raw_width, raw_height, raw, _raw_rgb = image_data(raw_path)
+norm_width, norm_height, normalized, _normalized_rgb = image_data(
+    normalized_path)
 assert (raw_width, raw_height) == (norm_width, norm_height), \
     "raw and normalized preview sizes differ"
+
+in_width, in_height, _in_luma, in_range_rgb = image_data(in_range_raw_path)
+out_width, out_height, _out_luma, in_range_normalized_rgb = image_data(
+    in_range_normalized_path)
+assert (in_width, in_height) == (out_width, out_height), \
+    "in-range preview sizes differ"
 
 edge_values = [
     edge_mean(normalized, norm_width, norm_height, edge)
@@ -73,11 +82,16 @@ assert raw_bright > 0.6, (
 assert normalized_bright < 0.3, (
     f"normalized preview remains clipped "
     f"({normalized_bright:.1%} bright pixels)")
-assert os.path.getsize(raw_path) != os.path.getsize(normalized_path), \
-    "normalization did not change the rendered PNG"
+in_range_max_diff = max(
+    abs(before - after)
+    for before, after in zip(in_range_rgb, in_range_normalized_rgb))
+assert in_range_max_diff <= (1.0 / 255.0 + 1.0e-5), (
+    f"in-range map was changed by normalization "
+    f"(max difference {in_range_max_diff:.6f})")
 
 print(
     "NORMALIZED_PREVIEW_OK "
     f"edge_span={edge_span:.3f} "
     f"raw_bright={raw_bright:.1%} "
-    f"normalized_bright={normalized_bright:.1%}")
+    f"normalized_bright={normalized_bright:.1%} "
+    f"in_range_max_diff={in_range_max_diff:.6f}")

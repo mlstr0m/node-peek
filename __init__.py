@@ -17,7 +17,7 @@ This is an independent, clean-room implementation inspired by the commercial
 bl_info = {
     "name": "Node Peek",
     "author": "mlstr0m (Résidence Principale)",
-    "version": (0, 5, 3),
+    "version": (0, 5, 4),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar (N) > Node Peek  /  Ctrl+Shift+P",
     "description": "Rendered thumbnail previews above shader nodes, computed in a background process.",
@@ -139,10 +139,10 @@ class NODEPEEK_Preferences(bpy.types.AddonPreferences):
         update=_pref_rerender,
     )
     normalize_data_previews: bpy.props.BoolProperty(
-        name="Normalize Data Previews",
-        description="Stretch each RGB channel of non-shader previews to its "
-                    "visible range. For inspection only: it changes colour "
-                    "relationships",
+        name="Normalize Out-of-Range Data",
+        description="Automatically normalize only RGB channels whose preview "
+                    "values fall outside the 0 to 1 range. In-range maps and "
+                    "shader previews remain unchanged",
         default=False,
         update=_pref_rerender,
     )
@@ -472,7 +472,8 @@ def _prune_cache(cache_dir):
             age = now - os.path.getmtime(path)
         except OSError:
             continue
-        stale_tmp = fn.endswith(".tmp.png") and age > 3600
+        stale_tmp = (fn.endswith(".tmp.png") or fn.endswith(".linear.exr")) \
+            and age > 3600
         expired = fn.endswith(".png") and not fn.endswith(".tmp.png") \
             and age > 14 * 86400
         if stale_tmp or expired:

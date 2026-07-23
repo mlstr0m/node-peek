@@ -39,6 +39,7 @@ Files on disk (all under the OS temp dir):
 | `node_peek_job_*/response.json` | worker | streamed job results (atomic tmp+rename) |
 | `node_peek_job_*/worker.log` | worker | the worker's log (main's stdout goes to DEVNULL) |
 | `node_peek_cache/<hash>.png` | worker | thumbnail cache, content-addressed |
+| `node_peek_cache/*.linear.exr` | worker | short-lived float render used only to inspect data range |
 
 The job dir is per-session (`mkdtemp`) and deleted on unregister. The cache dir
 is shared across sessions and instances — safe because filenames are content
@@ -166,9 +167,10 @@ Two placement subtleties, both hard-won:
    - in-group sockets are **bubbled** to the material tree by adding temporary
      interface output sockets at each nesting level (`bubble_socket`), torn
      down in a `finally`.
-   When data normalization is enabled, the float render passes through three
-   per-channel Compositor Normalize nodes before PNG conversion. Shader renders
-   bypass that branch.
+   When data normalization is enabled, the worker reads the scene-linear float
+   EXR and remaps only RGB channels whose min/max falls outside 0–1. In-range
+   channels and all shader renders bypass normalization; the EXR is deleted
+   immediately after PNG conversion.
    Render to tmp, `os.replace` into cache, stream a partial response.
 7. `purge_material` + final `done` response.
 
@@ -200,9 +202,9 @@ Cycles render either.
   EOF doubles as crash detection for the parent (no PID watching needed).
 - **The emission helper is created *after* snapshotting the node list**, so it
   never previews itself.
-- **The Compositor Render Layers node must target `_np_preview` explicitly.**
-  Blender 5.2 compositor groups otherwise default to the startup scene, silently
-  producing plausible-looking thumbnails of the default cube.
+- **Normalization happens directly on Render Result pixels, not through the
+  Compositor.** This avoids Blender-version-specific scene routing and lets the
+  worker leave maps already inside 0–1 exactly unchanged.
 - **`SCENE_VERSION`**: bump it whenever you change the preview scene (lights,
   cameras, sphere UVs, world). It's part of the cache salt, so old thumbnails
   invalidate automatically — never ship a scene change without bumping it.

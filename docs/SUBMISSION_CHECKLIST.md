@@ -14,7 +14,7 @@ Step-by-step to get Node Peek into Blender's **Get Extensions** catalogue.
 ```sh
 BL=/Applications/Blender.app/Contents/MacOS/Blender
 "$BL" --command extension build --source-dir node_peek --output-dir .
-# -> node_peek-0.5.3.zip  (manifest at the ZIP ROOT — required by the platform)
+# -> node_peek-0.5.4.zip  (manifest at the ZIP ROOT — required by the platform)
 ```
 
 Note: this is **not** the same as an "Install from Disk" zip that has a
@@ -35,7 +35,7 @@ Keep a copy under `screenshots/` in the repo (excluded from the built zip).
 ## 3. Submit
 
 1. Log in to https://extensions.blender.org with your **Blender ID**.
-2. Dashboard → **Add Extension** → upload `node_peek-0.5.3.zip`.
+2. Dashboard → **Add Extension** → upload `node_peek-0.5.4.zip`.
 3. Paste the **Description** from `docs/EXTENSION_LISTING.md`.
 4. Add the screenshots from step 2.
 5. Paste `docs/REVIEWER_NOTES.md` into the note-to-reviewers field.
