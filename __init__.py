@@ -17,7 +17,7 @@ This is an independent, clean-room implementation inspired by the commercial
 bl_info = {
     "name": "Node Peek",
     "author": "mlstr0m (Résidence Principale)",
-    "version": (0, 5, 4),
+    "version": (0, 5, 5),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar (N) > Node Peek  /  Ctrl+Shift+P",
     "description": "Rendered thumbnail previews above shader nodes, computed in a background process.",
@@ -63,6 +63,13 @@ _textures_material = None  # material name the current previews belong to
 
 # set of "tree_name/node_name" the user explicitly enabled (manual mode)
 _enabled_nodes = set()
+
+# Per-node draw scale. Keys include material + group-instance path + node name,
+# so identically named nodes in different materials/groups never collide.
+# Runtime-only by design: resizing previews must never dirty the user's .blend.
+_preview_scale_by_key = {}
+_PREVIEW_SCALE_MIN = 0.25
+_PREVIEW_SCALE_MAX = 3.0
 
 # persistent background worker + IPC state
 _worker = {
@@ -191,6 +198,83 @@ def _should_preview(tree, node, visible_default):
     return f"{tree.name}/{node.name}" in _enabled_nodes
 
 
+def _preview_scale_key(material_name, path, node_name):
+    """Stable runtime key for one preview in one material/group instance."""
+    return material_name, tuple(path), node_name
+
+
+def _preview_bounds(x0, x1, y0, pad, scale):
+    """Return a square preview rect, centered horizontally above its node."""
+    base_width = x1 - x0
+    width = base_width * scale
+    center = (x0 + x1) * 0.5
+    left = center - width * 0.5
+    bottom = y0 + pad
+    return left, bottom, left + width, bottom + width
+
+
+def _selected_preview_nodes(context):
+    space = getattr(context, "space_data", None)
+    if (space is None or space.type != 'NODE_EDITOR'
+            or space.tree_type != 'ShaderNodeTree'
+            or space.edit_tree is None):
+        return []
+    tree = space.edit_tree
+    return [
+        node for node in tree.nodes
+        if node.select and _should_preview(tree, node, visible_default=True)
+    ]
+
+
+def _context_scale_key(context, node):
+    space = getattr(context, "space_data", None)
+    material = getattr(space, "id", None)
+    if not isinstance(material, bpy.types.Material):
+        return None
+    return _preview_scale_key(
+        material.name_full, _path_names(space), node.name)
+
+
+def _selected_preview_scale(context):
+    nodes = _selected_preview_nodes(context)
+    if not nodes:
+        return 100.0
+    active = context.space_data.edit_tree.nodes.active
+    node = active if active in nodes else nodes[0]
+    key = _context_scale_key(context, node)
+    scale = _preview_scale_by_key.get(key, 1.0) if key else 1.0
+    return scale * 100.0
+
+
+def _set_selected_preview_scale(context, value):
+    scale = max(_PREVIEW_SCALE_MIN,
+                min(_PREVIEW_SCALE_MAX, float(value) / 100.0))
+    for node in _selected_preview_nodes(context):
+        key = _context_scale_key(context, node)
+        if key is None:
+            continue
+        if abs(scale - 1.0) < 1.0e-6:
+            _preview_scale_by_key.pop(key, None)
+        else:
+            _preview_scale_by_key[key] = scale
+
+
+def _selected_preview_scale_get(_window_manager):
+    return _selected_preview_scale(bpy.context)
+
+
+def _selected_preview_scale_set(_window_manager, value):
+    _set_selected_preview_scale(bpy.context, value)
+    _tag_redraw_node_editors()
+
+
+def _reset_selected_preview_scales(context):
+    for node in _selected_preview_nodes(context):
+        key = _context_scale_key(context, node)
+        if key is not None:
+            _preview_scale_by_key.pop(key, None)
+
+
 # ---------------------------------------------------------------------------
 # GPU drawing
 # ---------------------------------------------------------------------------
@@ -219,6 +303,7 @@ def _draw_callback():
     # so nodes inside a group don't collide with same-named top-level nodes
     names = _path_names(space)
     key_prefix = (PATH_SEP.join(names) + PATH_SEP) if names else ""
+    material_name = id_.name_full
 
     region = context.region
     v2d = region.view2d
@@ -257,15 +342,18 @@ def _draw_callback():
         if w < 8:  # too zoomed out to bother
             continue
 
-        bottom = y0 + pad
-        top = bottom + w  # square, matches node width
+        scale_key = _preview_scale_key(material_name, names, node.name)
+        preview_scale = _preview_scale_by_key.get(scale_key, 1.0)
+        left, bottom, right, top = _preview_bounds(
+            x0, x1, y0, pad, preview_scale)
 
         # TRI_STRIP (not TRI_FAN) — TRI_FAN is unsupported on the Metal backend
         # used on macOS, which would make previews silently not draw.
         batch = batch_for_shader(
             shader, 'TRI_STRIP',
             {
-                "pos": ((x0, bottom), (x1, bottom), (x0, top), (x1, top)),
+                "pos": ((left, bottom), (right, bottom),
+                        (left, top), (right, top)),
                 "texCoord": ((0, 0), (1, 0), (0, 1), (1, 1)),
             },
         )
@@ -871,6 +959,7 @@ def _on_load_post(_dummy):
         _textures_material, _reload_seq, _last_path
     _drop_all_previews(remove_datablocks=False)  # refs are dangling, don't touch
     _enabled_nodes.clear()
+    _preview_scale_by_key.clear()
     _reloaded.clear()
     _reload_seq = -1
     # mark any in-flight request as already consumed: its response belongs to
@@ -959,6 +1048,32 @@ class NODEPEEK_OT_clear(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class NODEPEEK_OT_reset_selected_sizes(bpy.types.Operator):
+    bl_idname = "node.node_peek_reset_selected_sizes"
+    bl_label = "Reset Selected Preview Sizes"
+    bl_description = "Restore selected nodes to the default preview size"
+
+    @classmethod
+    def poll(cls, context):
+        return bool(_selected_preview_nodes(context))
+
+    def execute(self, context):
+        _reset_selected_preview_scales(context)
+        _tag_redraw_node_editors()
+        return {'FINISHED'}
+
+
+class NODEPEEK_OT_reset_all_sizes(bpy.types.Operator):
+    bl_idname = "node.node_peek_reset_all_sizes"
+    bl_label = "Reset All Preview Sizes"
+    bl_description = "Restore every individually resized preview to its default size"
+
+    def execute(self, _context):
+        _preview_scale_by_key.clear()
+        _tag_redraw_node_editors()
+        return {'FINISHED'}
+
+
 # ---------------------------------------------------------------------------
 # UI panel
 # ---------------------------------------------------------------------------
@@ -981,6 +1096,24 @@ class NODEPEEK_PT_panel(bpy.types.Panel):
         layout.prop(prefs, "visible_by_default")
         layout.prop(prefs, "resolution")
         layout.prop(prefs, "normalize_data_previews")
+        size_box = layout.box()
+        size_box.label(text="Individual Preview Size")
+        selected = _selected_preview_nodes(context)
+        if selected:
+            row = size_box.row(align=True)
+            row.prop(context.window_manager, "node_peek_preview_scale",
+                     text="Selected", slider=True)
+            row.operator("node.node_peek_reset_selected_sizes",
+                         text="", icon='LOOP_BACK')
+            if len(selected) > 1:
+                size_box.label(
+                    text=f"Applies to {len(selected)} selected nodes",
+                    icon='INFO')
+        else:
+            size_box.label(text="Select one or more nodes", icon='INFO')
+        reset_row = size_box.row()
+        reset_row.enabled = bool(_preview_scale_by_key)
+        reset_row.operator("node.node_peek_reset_all_sizes", text="Reset All")
         layout.separator()
         layout.operator("node.node_peek_refresh", icon='FILE_REFRESH')
         layout.operator("node.node_peek_toggle_selected", icon='HIDE_OFF')
@@ -1001,6 +1134,8 @@ _classes = (
     NODEPEEK_OT_toggle_selected,
     NODEPEEK_OT_refresh,
     NODEPEEK_OT_clear,
+    NODEPEEK_OT_reset_selected_sizes,
+    NODEPEEK_OT_reset_all_sizes,
     NODEPEEK_PT_panel,
 )
 
@@ -1011,6 +1146,19 @@ def register():
     global _draw_handle
     for cls in _classes:
         bpy.utils.register_class(cls)
+
+    bpy.types.WindowManager.node_peek_preview_scale = bpy.props.FloatProperty(
+        name="Selected Preview Size",
+        description="Resize previews for the selected nodes only",
+        default=100.0,
+        min=_PREVIEW_SCALE_MIN * 100.0,
+        max=_PREVIEW_SCALE_MAX * 100.0,
+        precision=0,
+        subtype='PERCENTAGE',
+        options={'SKIP_SAVE'},
+        get=_selected_preview_scale_get,
+        set=_selected_preview_scale_set,
+    )
 
     _draw_handle = bpy.types.SpaceNodeEditor.draw_handler_add(
         _draw_callback, (), 'WINDOW', 'POST_PIXEL')
@@ -1057,6 +1205,10 @@ def unregister():
         shutil.rmtree(job_dir, ignore_errors=True)
         _worker["job_dir"] = None
     _drop_all_previews(remove_datablocks=True)
+    _preview_scale_by_key.clear()
+
+    if hasattr(bpy.types.WindowManager, "node_peek_preview_scale"):
+        del bpy.types.WindowManager.node_peek_preview_scale
 
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)

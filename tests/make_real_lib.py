@@ -112,7 +112,7 @@ chk = nt2.nodes.new("ShaderNodeTexChecker"); chk.name = "PlainChecker"
 nt2.links.new(chk.outputs["Color"], bsdf2.inputs["Base Color"])
 
 # HDR scalar data: its flat preview is deliberately clipped with the normal
-# display transform, so e2e_real can prove the normalize compositor branch
+# display transform, so e2e_real can prove the conditional float-render path
 # creates a different image without affecting the connected shader preview.
 mat3 = bpy.data.materials.new("NormalizeMat")
 mat3.use_nodes = True
@@ -134,6 +134,17 @@ print("CUSTOM_TYPES RealSim :", customs)
 print("CUSTOM_TYPES PlainMat:", customs_plain)
 assert customs == ["SimGradient", "SimScaledChecker"], customs
 assert customs_plain == [], customs_plain
+
+# Preview sizing is a main-process drawing concern, so exercise its pure
+# geometry/key helpers here without involving the render worker.
+assert node_peek._preview_scale_key("MatA", [], "Node") != \
+       node_peek._preview_scale_key("MatB", [], "Node")
+assert node_peek._preview_scale_key("MatA", [], "Node") != \
+       node_peek._preview_scale_key("MatA", ["Group"], "Node")
+assert node_peek._preview_bounds(10.0, 110.0, 50.0, 4.0, 0.5) == \
+       (35.0, 54.0, 85.0, 104.0)
+assert node_peek._preview_bounds(10.0, 110.0, 50.0, 4.0, 2.0) == \
+       (-40.0, 54.0, 160.0, 254.0)
 
 bpy.data.libraries.write(outdir + "/real.blend", {mat, mat2, mat3},
                          path_remap='ABSOLUTE', fake_user=True)

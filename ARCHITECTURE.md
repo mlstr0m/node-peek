@@ -140,6 +140,11 @@ Two placement subtleties, both hard-won:
 - **UI scale**: `node.location` is in unscaled node units; the editor draws at
   `ui_scale`. We self-calibrate with `node.dimensions.x / node.width` (exact),
   falling back to the preference. Without this, previews drift on Retina.
+- **Individual sizing**: `_preview_scale_by_key` stores only non-default
+  runtime scales, keyed by material + group-instance path + node name. Drawing
+  keeps each scaled square centred above its node. The selection slider updates
+  this dictionary and redraws the editor; it never triggers rendering or writes
+  an ID property, so changing preview size cannot dirty the `.blend`.
 - **`TRI_STRIP`, not `TRI_FAN`**: Metal (macOS) doesn't support TRI_FAN — draws
   silently nothing.
 

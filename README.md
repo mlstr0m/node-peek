@@ -29,9 +29,16 @@ Requires **Blender 4.2+**. Works on macOS, Linux, and Windows.
 - Previews appear above nodes automatically (when *Previews Visible By Default*
   is on).
 - Sidebar (**N**) → **Node Peek** tab for controls (Refresh, Clear, resolution).
+- To resize previews independently, select one or more nodes and drag
+  **Individual Preview Size → Selected** (25–300%). The reset buttons restore
+  either the selected nodes or every custom size.
 - **Ctrl+Shift+P** — toggle previews on the selected nodes (used when
   *Previews Visible By Default* is off).
 - Enter a node group (**Tab**) and its interior nodes get previews too.
+
+Individual sizes only affect the current Blender session. They are deliberately
+kept outside the scene, so resizing a preview never modifies or dirties the
+`.blend` file.
 
 | Preference | Meaning |
 |---|---|
@@ -40,6 +47,7 @@ Requires **Blender 4.2+**. Works on macOS, Linux, and Windows.
 | Update Delay | Debounce after the last edit before re-rendering |
 | Render Engine | Cycles (reliable) or EEVEE (experimental — often black in background) |
 | Normalize Out-of-Range Data | Normalizes only RGB channels outside 0–1; in-range maps and shader previews stay unchanged |
+| Individual Preview Size | Resize the selected nodes' previews from 25% to 300%, without re-rendering |
 
 ## How it works
 

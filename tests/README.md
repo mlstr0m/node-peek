@@ -31,6 +31,24 @@ What it verifies:
   actual PNG pixels, so rendering the wrong Blender scene cannot pass.
 - temporary float EXR files are removed after normalization.
 
+## Per-node preview sizing (automated, headless)
+
+```sh
+"$BL" --background --factory-startup --python-exit-code 1 \
+  --python tests/test_preview_resize.py
+```
+
+Expected: every line is `PASS`, ending with `PREVIEW_RESIZE_OK`.
+
+What it verifies:
+
+- one or several selected nodes can be resized from 25% to 300%;
+- unselected nodes keep their own size;
+- material and group paths keep identically named nodes isolated;
+- reset selected and reset all have the expected scope;
+- 100% falls back to the default without storing redundant state;
+- registering and resizing previews never dirties the `.blend`.
+
 ## Manual: live check in your own Blender
 
 Open `tests/manual_test_custom_nodes.py` in Blender's Text Editor and Run,
