@@ -152,7 +152,9 @@ Two placement subtleties, both hard-won:
    not per edit. Cache capped at 16, fake-user'd so `purge_material` spares them.
 3. Hash every previewable node (`node_signature`) → `<digest>.png`. The digest
    covers the node, everything upstream, node-group internals
-   (`group_signature`), image file mtimes, and a salt (`res|engine|SCENE_VERSION`).
+   (`group_signature`), image file mtimes, and a salt
+   (`res|engine|SCENE_VERSION|normalization`). The normalization suffix applies
+   only to non-shader targets, so shader previews remain reusable across modes.
 4. If a group path was sent, hash that group's interior too, salted with the
    **instance signature** (the group node chain), so two instances of the same
    group with different inputs cache separately.
@@ -164,6 +166,9 @@ Two placement subtleties, both hard-won:
    - in-group sockets are **bubbled** to the material tree by adding temporary
      interface output sockets at each nesting level (`bubble_socket`), torn
      down in a `finally`.
+   When data normalization is enabled, the float render passes through three
+   per-channel Compositor Normalize nodes before PNG conversion. Shader renders
+   bypass that branch.
    Render to tmp, `os.replace` into cache, stream a partial response.
 7. `purge_material` + final `done` response.
 
@@ -195,6 +200,9 @@ Cycles render either.
   EOF doubles as crash detection for the parent (no PID watching needed).
 - **The emission helper is created *after* snapshotting the node list**, so it
   never previews itself.
+- **The Compositor Render Layers node must target `_np_preview` explicitly.**
+  Blender 5.2 compositor groups otherwise default to the startup scene, silently
+  producing plausible-looking thumbnails of the default cube.
 - **`SCENE_VERSION`**: bump it whenever you change the preview scene (lights,
   cameras, sphere UVs, world). It's part of the cache salt, so old thumbnails
   invalidate automatically — never ship a scene change without bumping it.

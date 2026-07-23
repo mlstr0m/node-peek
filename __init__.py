@@ -17,7 +17,7 @@ This is an independent, clean-room implementation inspired by the commercial
 bl_info = {
     "name": "Node Peek",
     "author": "mlstr0m (Résidence Principale)",
-    "version": (0, 5, 2),
+    "version": (0, 5, 3),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar (N) > Node Peek  /  Ctrl+Shift+P",
     "description": "Rendered thumbnail previews above shader nodes, computed in a background process.",

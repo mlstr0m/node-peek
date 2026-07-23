@@ -277,6 +277,11 @@ def build_preview_scene():
         scene.compositing_node_group = comp
     comp.nodes.clear()
     layers = comp.nodes.new("CompositorNodeRLayers")
+    # A Render Layers node defaults to Blender's startup "Scene" when it lives
+    # in the standalone compositor group introduced in Blender 5.2. Point it
+    # at our private preview scene explicitly, or every thumbnail contains the
+    # default cube instead of Node Peek's plane/sphere.
+    layers.scene = scene
     if modern_compositor:
         comp.interface.new_socket(name="Image", in_out='OUTPUT',
                                   socket_type="NodeSocketColor")

@@ -25,8 +25,9 @@ What it verifies:
 - pure-Python nodes (no internal tree) are skipped, not given a flat thumbnail;
 - a bogus stub idname doesn't break the job;
 - a **plain material** in the same worker session takes the unchanged fast path.
-- normalization creates a distinct preview for HDR data while a shader preview
-  reuses its existing cache entry unchanged.
+- normalization produces a full-frame readable gradient for HDR data while a
+  shader preview reuses its existing cache entry unchanged. The assertion reads
+  the actual PNG pixels, so rendering the wrong Blender scene cannot pass.
 
 ## Manual: live check in your own Blender
 

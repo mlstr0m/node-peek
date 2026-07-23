@@ -57,8 +57,10 @@ Requires **Blender 4.2+**. Works on macOS, Linux, and Windows.
 - Results are **streamed**: the node you're editing renders first and appears
   immediately, without waiting for the whole job.
 - Texture/color/vector nodes render as a flat **map** (orthographic plane +
-  emission, 1 sample — noise-free). Real shader nodes render as a shaded
-  **sphere** (adaptive sampling + denoise).
+  emission, 1 sample — noise-free). When normalization is enabled, each RGB
+  channel is mapped to its visible range before PNG conversion. Real shader
+  nodes render as a shaded **sphere** (adaptive sampling + denoise) and bypass
+  normalization.
 - Image texture datablocks are **cached across jobs**; renders land in the cache
   via atomic rename (a killed worker can't corrupt it); GPU textures are
   content-addressed and shared between nodes with identical output.

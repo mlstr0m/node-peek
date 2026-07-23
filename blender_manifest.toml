@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "node_peek"
-version = "0.5.2"
+version = "0.5.3"
 name = "Node Peek"
 tagline = "Live rendered thumbnail previews above shader nodes"
 maintainer = "mlstr0m <aurelien@residenceprincipale.net>"

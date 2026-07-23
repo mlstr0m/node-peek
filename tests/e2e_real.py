@@ -94,14 +94,24 @@ check("Amplify" in p3 and "Amplify" in p4, "HDR data preview rendered")
 check(p3.get("Principled BSDF") == p4.get("Principled BSDF"),
       "shader preview cache is unaffected by normalization")
 try:
-    with open(os.path.join(cache, p3["Amplify"]), "rb") as fh:
-        raw_png = fh.read()
-    with open(os.path.join(cache, p4["Amplify"]), "rb") as fh:
-        normalized_png = fh.read()
-    check(raw_png != normalized_png,
-          "normalized HDR data preview differs from clipped preview")
+    raw_png = os.path.join(cache, p3["Amplify"])
+    normalized_png = os.path.join(cache, p4["Amplify"])
+    verifier = os.path.join(os.path.dirname(__file__),
+                            "verify_normalized_preview.py")
+    verified = subprocess.run(
+        [blender, "--background", "--factory-startup",
+         "--python-exit-code", "1", "--python", verifier,
+         "--", raw_png, normalized_png],
+        capture_output=True, text=True, timeout=60)
+    if verified.stdout:
+        print(verified.stdout.strip())
+    if verified.returncode and verified.stderr:
+        print(verified.stderr.strip())
+    check(verified.returncode == 0,
+          "normalized HDR data preview has the expected full-frame range")
 except (KeyError, OSError):
-    check(False, "normalized HDR data preview differs from clipped preview")
+    check(False,
+          "normalized HDR data preview has the expected full-frame range")
 
 # expose file paths for visual inspection
 for k in ("CheckerA", "CheckerB", "Grad", "Wrap", "InvertA", "Principled BSDF"):
