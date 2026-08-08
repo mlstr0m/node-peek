@@ -308,7 +308,11 @@ def _draw_callback():
     region = context.region
     v2d = region.view2d
 
-    shader = gpu.shader.from_builtin('IMAGE')
+    # gpu.texture.from_image() exposes image colors in scene-linear space.
+    # POST_PIXEL targets use Rec.709 sRGB, so the plain IMAGE shader would
+    # display those values as if they were already sRGB and make previews
+    # visibly too dark.
+    shader = gpu.shader.from_builtin('IMAGE_SCENE_LINEAR_TO_REC709_SRGB')
     gpu.state.blend_set('ALPHA')
 
     pad = 4  # pixels between node top and preview
