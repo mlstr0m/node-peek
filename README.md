@@ -26,14 +26,19 @@ Requires **Blender 4.2+**. Works on macOS, Linux, and Windows.
 
 ## Usage
 
-- Previews appear above nodes automatically (when *Previews Visible By Default*
-  is on).
-- Sidebar (**N**) → **Node Peek** tab for controls (Refresh, Clear, resolution).
+- Select a node and its preview appears. Deselect everything and the graph goes
+  back to being clean. This is the default (*Show Previews → Selected Nodes*).
+- Want a preview on every node instead? Switch *Show Previews* to **All Nodes**.
+- Previews are an overlay: the Shader Editor's **Overlays** button switches them
+  off, and both controls live in the **Overlays popover** in the header.
+- Sidebar (**N**) → **Node Peek** tab for the same controls plus maintenance
+  (Refresh, Clear, resolution).
 - To resize previews independently, select one or more nodes and drag
   **Individual Preview Size → Selected** (25–300%). The reset buttons restore
   either the selected nodes or every custom size.
-- **Ctrl+Shift+P** — toggle previews on the selected nodes (used when
-  *Previews Visible By Default* is off).
+- **Ctrl+Shift+P** — pin the selected nodes' previews so they stay visible after
+  you select something else. Useful to watch one node's result while tweaking
+  another. *Unpin All* clears them.
 - Enter a node group (**Tab**) and its interior nodes get previews too.
 
 Individual sizes only affect the current Blender session. They are deliberately
@@ -42,7 +47,7 @@ kept outside the scene, so resizing a preview never modifies or dirties the
 
 | Preference | Meaning |
 |---|---|
-| Previews Visible By Default | Show previews on all nodes, or only manually-enabled ones |
+| Show Previews | *Selected Nodes* (default) previews the selection plus any pinned nodes; *All Nodes* previews everything |
 | Thumbnail Resolution | 32–512 px render size per node |
 | Update Delay | Debounce after the last edit before re-rendering |
 | Render Engine | Cycles (reliable) or EEVEE (experimental — often black in background) |

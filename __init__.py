@@ -17,9 +17,9 @@ This is an independent, clean-room implementation inspired by the commercial
 bl_info = {
     "name": "Node Peek",
     "author": "mlstr0m (Résidence Principale)",
-    "version": (0, 5, 6),
+    "version": (0, 6, 0),
     "blender": (4, 2, 0),
-    "location": "Shader Editor > Sidebar (N) > Node Peek  /  Ctrl+Shift+P",
+    "location": "Shader Editor > Overlays popover  /  Sidebar (N) > Node Peek  /  Ctrl+Shift+P",
     "description": "Rendered thumbnail previews above shader nodes, computed in a background process.",
     "category": "Node",
 }
@@ -61,8 +61,11 @@ _img_by_path = {}     # png path -> bpy.types.Image (kept alive, dot-named)
 _node_pngpath = {}    # node name -> png path
 _textures_material = None  # material name the current previews belong to
 
-# set of "tree_name/node_name" the user explicitly enabled (manual mode)
-_enabled_nodes = set()
+# Pinned previews: nodes that keep their preview in SELECTED mode even once
+# they are deselected. Keyed like _preview_scale_by_key (material + group path
+# + node name) because every material's embedded tree is literally named
+# "Shader Nodetree", so a "tree_name/node_name" key collides across materials.
+_pinned_nodes = set()
 
 # Per-node draw scale. Keys include material + group-instance path + node name,
 # so identically named nodes in different materials/groups never collide.
@@ -122,11 +125,17 @@ class NODEPEEK_Preferences(bpy.types.AddonPreferences):
         default=150, min=32, max=512,
         update=_pref_rerender,
     )
-    visible_by_default: bpy.props.BoolProperty(
-        name="Previews Visible By Default",
-        description="Show a preview above every node. When off, use Ctrl+Shift+P "
-                    "to toggle previews on the selected nodes only",
-        default=True,
+    display_mode: bpy.props.EnumProperty(
+        name="Show Previews",
+        description="Which nodes get a preview thumbnail",
+        items=[
+            ('SELECTED', "Selected Nodes",
+             "Preview the selected nodes only, plus any pinned ones. Keeps "
+             "dense node trees readable"),
+            ('ALL', "All Nodes",
+             "Preview every compatible node in the tree"),
+        ],
+        default='SELECTED',
         update=_pref_redraw,
     )
     debounce: bpy.props.FloatProperty(
@@ -156,12 +165,15 @@ class NODEPEEK_Preferences(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, "visible_by_default")
+        layout.prop(self, "display_mode")
         layout.prop(self, "resolution")
         layout.prop(self, "debounce")
         layout.prop(self, "engine")
         layout.prop(self, "normalize_data_previews")
-        layout.label(text="Toggle preview on selected nodes: Ctrl+Shift+P", icon='INFO')
+        layout.label(text="Pin previews on selected nodes: Ctrl+Shift+P",
+                     icon='INFO')
+        layout.label(text="Previews follow the Shader Editor Overlays toggle",
+                     icon='OVERLAY')
 
 
 def _prefs():
@@ -183,7 +195,8 @@ def _absolute_location(node):
     return x, y
 
 
-def _should_preview(tree, node, visible_default):
+def _previewable(node):
+    """Type-level eligibility, independent of the display mode."""
     if node.type in {'FRAME', 'REROUTE', 'GROUP_INPUT', 'GROUP_OUTPUT'}:
         return False
     if node.type in {'OUTPUT_MATERIAL', 'OUTPUT_WORLD', 'OUTPUT_LIGHT'}:
@@ -193,9 +206,27 @@ def _should_preview(tree, node, visible_default):
     if node.hide:
         # previews on collapsed nodes look odd; skip for now
         return False
-    if visible_default:
+    return True
+
+
+def _should_preview(tree, node, mode, pinned=()):
+    """``pinned`` is the set of node NAMES pinned for the material/group path
+    currently being drawn (see _pinned_names)."""
+    if not _previewable(node):
+        return False
+    if mode == 'ALL':
         return True
-    return f"{tree.name}/{node.name}" in _enabled_nodes
+    # SELECTED: what the user is working on right now, plus explicit pins.
+    # Pinning matters because clicking a slider inside another node steals the
+    # selection, which would otherwise hide the preview you are watching.
+    return node.select or node.name in pinned
+
+
+def _pinned_names(material_name, path):
+    """Node names pinned in this material at this group-instance path."""
+    want = tuple(path)
+    return {name for (mat, p, name) in _pinned_nodes
+            if mat == material_name and p == want}
 
 
 def _preview_scale_key(material_name, path, node_name):
@@ -220,10 +251,8 @@ def _selected_preview_nodes(context):
             or space.edit_tree is None):
         return []
     tree = space.edit_tree
-    return [
-        node for node in tree.nodes
-        if node.select and _should_preview(tree, node, visible_default=True)
-    ]
+    return [node for node in tree.nodes
+            if node.select and _previewable(node)]
 
 
 def _context_scale_key(context, node):
@@ -286,6 +315,17 @@ def _draw_callback():
         return
     if space.tree_type != 'ShaderNodeTree':
         return
+
+    # Previews ARE an overlay: the editor's Overlays button must switch them
+    # off, like every other overlay. This is per-space, so a second editor with
+    # overlays enabled keeps drawing them.
+    overlay = getattr(space, "overlay", None)
+    if overlay is not None and not getattr(overlay, "show_overlays", True):
+        return
+    scene = context.scene
+    if scene is not None and not getattr(scene, "node_peek_show", True):
+        return
+
     tree = space.edit_tree
     if tree is None or not _node_pngpath:
         return
@@ -316,7 +356,8 @@ def _draw_callback():
     gpu.state.blend_set('ALPHA')
 
     pad = 4  # pixels between node top and preview
-    visible_default = _prefs().visible_by_default
+    mode = _prefs().display_mode
+    pinned = _pinned_names(material_name, names) if mode != 'ALL' else ()
 
     # Node locations are stored in unscaled "node units"; the editor draws them
     # multiplied by the UI scale factor (DPI). We must apply the same factor
@@ -325,7 +366,7 @@ def _draw_callback():
     ui_scale = bpy.context.preferences.system.ui_scale
 
     for node in tree.nodes:
-        if not _should_preview(tree, node, visible_default):
+        if not _should_preview(tree, node, mode, pinned):
             continue
         tex = _tex_by_path.get(_node_pngpath.get(key_prefix + node.name))
         if tex is None:
@@ -962,7 +1003,7 @@ def _on_load_post(_dummy):
     global _last_material, _dirty, _last_fingerprint, _consumed_seq, \
         _textures_material, _reload_seq, _last_path
     _drop_all_previews(remove_datablocks=False)  # refs are dangling, don't touch
-    _enabled_nodes.clear()
+    _pinned_nodes.clear()
     _preview_scale_by_key.clear()
     _reloaded.clear()
     _reload_seq = -1
@@ -980,10 +1021,11 @@ def _on_load_post(_dummy):
 # Operators
 # ---------------------------------------------------------------------------
 
-class NODEPEEK_OT_toggle_selected(bpy.types.Operator):
-    bl_idname = "node.node_peek_toggle_selected"
-    bl_label = "Toggle Node Peek"
-    bl_description = "Toggle preview thumbnails for the selected nodes"
+class NODEPEEK_OT_pin_selected(bpy.types.Operator):
+    bl_idname = "node.node_peek_pin_selected"
+    bl_label = "Pin Preview"
+    bl_description = ("Keep the preview visible on the selected nodes even "
+                      "after they are deselected")
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -994,20 +1036,40 @@ class NODEPEEK_OT_toggle_selected(bpy.types.Operator):
                 and space.edit_tree is not None)
 
     def execute(self, context):
-        tree = context.space_data.edit_tree
-        selected = [n for n in tree.nodes if n.select]
-        if not selected:
-            self.report({'WARNING'}, "No nodes selected")
+        nodes = _selected_preview_nodes(context)
+        if not nodes:
+            self.report({'WARNING'}, "No previewable node selected")
             return {'CANCELLED'}
-        for node in selected:
-            key = f"{tree.name}/{node.name}"
-            if key in _enabled_nodes:
-                _enabled_nodes.discard(key)
+        pinned = unpinned = 0
+        for node in nodes:
+            key = _context_scale_key(context, node)  # material + path + name
+            if key is None:
+                continue
+            if key in _pinned_nodes:
+                _pinned_nodes.discard(key)
+                unpinned += 1
             else:
-                _enabled_nodes.add(key)
+                _pinned_nodes.add(key)
+                pinned += 1
         global _dirty, _last_edit_time
         _dirty = True  # ensures textures exist if nothing rendered yet
         _last_edit_time = time.time()
+        _tag_redraw_node_editors()
+        self.report({'INFO'}, f"Pinned {pinned}, unpinned {unpinned}")
+        return {'FINISHED'}
+
+
+class NODEPEEK_OT_unpin_all(bpy.types.Operator):
+    bl_idname = "node.node_peek_unpin_all"
+    bl_label = "Unpin All Previews"
+    bl_description = "Remove every pinned preview"
+
+    @classmethod
+    def poll(cls, _context):
+        return bool(_pinned_nodes)
+
+    def execute(self, _context):
+        _pinned_nodes.clear()
         _tag_redraw_node_editors()
         return {'FINISHED'}
 
@@ -1097,7 +1159,24 @@ class NODEPEEK_PT_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         prefs = _prefs()
-        layout.prop(prefs, "visible_by_default")
+
+        # display controls live in the Overlays popover now; mirrored here so
+        # the panel is not a dead end for anyone who looks for them
+        disp = layout.column()
+        disp.prop(context.scene, "node_peek_show", text="Show Previews")
+        sub = disp.column()
+        sub.active = context.scene.node_peek_show
+        sub.prop(prefs, "display_mode", text="")
+        space = context.space_data
+        overlay = getattr(space, "overlay", None)
+        if overlay is not None and not getattr(overlay, "show_overlays", True):
+            layout.label(text="Editor overlays are off", icon='OVERLAY')
+        elif (prefs.display_mode == 'SELECTED'
+                and not _selected_preview_nodes(context)
+                and not _pinned_nodes):
+            layout.label(text="Select a node to preview it", icon='INFO')
+
+        layout.separator()
         layout.prop(prefs, "resolution")
         layout.prop(prefs, "normalize_data_previews")
         size_box = layout.box()
@@ -1119,8 +1198,13 @@ class NODEPEEK_PT_panel(bpy.types.Panel):
         reset_row.enabled = bool(_preview_scale_by_key)
         reset_row.operator("node.node_peek_reset_all_sizes", text="Reset All")
         layout.separator()
+        pin_row = layout.row(align=True)
+        pin_row.operator("node.node_peek_pin_selected", icon='PINNED')
+        pin_row.operator("node.node_peek_unpin_all", text="",
+                         icon='UNPINNED')
+        if _pinned_nodes:
+            layout.label(text=f"{len(_pinned_nodes)} pinned", icon='PINNED')
         layout.operator("node.node_peek_refresh", icon='FILE_REFRESH')
-        layout.operator("node.node_peek_toggle_selected", icon='HIDE_OFF')
         layout.operator("node.node_peek_clear", icon='TRASH')
         if _worker_failures >= 3:
             layout.label(text="Worker keeps crashing — see worker.log",
@@ -1130,12 +1214,34 @@ class NODEPEEK_PT_panel(bpy.types.Panel):
 
 
 # ---------------------------------------------------------------------------
+# Overlays popover
+# ---------------------------------------------------------------------------
+
+def _draw_overlay_entry(self, context):
+    """Appended to the Shader Editor's Overlays popover (NODE_PT_overlay).
+
+    The parent draw() sets layout.active from overlay.show_overlays, and that
+    state is inherited here, so the section greys out with the rest."""
+    space = context.space_data
+    if space is None or space.tree_type != 'ShaderNodeTree':
+        return
+    layout = self.layout
+    layout.separator()
+    col = layout.column()
+    col.prop(context.scene, "node_peek_show", text="Node Peek Previews")
+    sub = col.column()
+    sub.active = context.scene.node_peek_show
+    sub.prop(_prefs(), "display_mode", text="")
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
 _classes = (
     NODEPEEK_Preferences,
-    NODEPEEK_OT_toggle_selected,
+    NODEPEEK_OT_pin_selected,
+    NODEPEEK_OT_unpin_all,
     NODEPEEK_OT_refresh,
     NODEPEEK_OT_clear,
     NODEPEEK_OT_reset_selected_sizes,
@@ -1164,6 +1270,19 @@ def register():
         set=_selected_preview_scale_set,
     )
 
+    bpy.types.Scene.node_peek_show = bpy.props.BoolProperty(
+        name="Node Peek Previews",
+        description="Draw preview thumbnails in the Shader Editor. Also "
+                    "follows the editor's own Overlays toggle",
+        default=True,
+        update=_pref_redraw,
+    )
+
+    # previews are an overlay, so they belong in the Overlays popover.
+    # Guarded: the panel is provided by Blender's own UI scripts.
+    if hasattr(bpy.types, "NODE_PT_overlay"):
+        bpy.types.NODE_PT_overlay.append(_draw_overlay_entry)
+
     _draw_handle = bpy.types.SpaceNodeEditor.draw_handler_add(
         _draw_callback, (), 'WINDOW', 'POST_PIXEL')
 
@@ -1180,7 +1299,8 @@ def register():
     if kc:
         km = kc.keymaps.new(name="Node Editor", space_type='NODE_EDITOR')
         kmi = km.keymap_items.new(
-            "node.node_peek_toggle_selected", 'P', 'PRESS', ctrl=True, shift=True)
+            "node.node_peek_pin_selected", 'P', 'PRESS',
+            ctrl=True, shift=True)
         _keymaps.append((km, kmi))
 
 
@@ -1199,6 +1319,12 @@ def unregister():
     if _on_load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_on_load_post)
 
+    if hasattr(bpy.types, "NODE_PT_overlay"):
+        try:
+            bpy.types.NODE_PT_overlay.remove(_draw_overlay_entry)
+        except Exception:  # noqa: BLE001  (never appended, or already gone)
+            pass
+
     if _draw_handle is not None:
         bpy.types.SpaceNodeEditor.draw_handler_remove(_draw_handle, 'WINDOW')
         _draw_handle = None
@@ -1210,9 +1336,12 @@ def unregister():
         _worker["job_dir"] = None
     _drop_all_previews(remove_datablocks=True)
     _preview_scale_by_key.clear()
+    _pinned_nodes.clear()
 
     if hasattr(bpy.types.WindowManager, "node_peek_preview_scale"):
         del bpy.types.WindowManager.node_peek_preview_scale
+    if hasattr(bpy.types.Scene, "node_peek_show"):
+        del bpy.types.Scene.node_peek_show
 
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)
