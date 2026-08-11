@@ -27,8 +27,16 @@ rewiring it to the Material Output over and over.
 
 ### Features
 
+- **Previews follow your selection** — select a node to see its result, deselect
+  to get a clean graph back. Dense node trees stay readable instead of being
+  buried under thumbnails. Prefer a preview on everything? One click switches to
+  *All Nodes*.
+- **A real overlay** — the controls sit in the Shader Editor's Overlays popover
+  and obey the Overlays toggle, like every other overlay in Blender.
 - **A preview on (almost) every node** — texture, colour and vector nodes show a
   flat 2D map; shader nodes show a lit sphere.
+- **Pin what you're watching** — `Ctrl+Shift+P` keeps a preview on screen while
+  you tweak a different node.
 - **Live updates** — tweak a value and the affected previews refresh on their own.
 - **Never blocks Blender** — previews are rendered in a separate background
   process, so the interface stays responsive even on heavy graphs.
@@ -51,10 +59,11 @@ node with the GPU. Your actual scene is never modified and never re-rendered.
 ### Usage
 
 1. Open a **Shader Editor** and select an object with a node-based material.
-2. Previews appear above the nodes automatically.
-3. Open the **N-panel → Node Peek** for controls (resolution, refresh, clear).
-4. Prefer to choose nodes yourself? Turn off *Previews Visible By Default* and
-   press **Ctrl+Shift+P** to toggle previews on the selected nodes.
+2. Select a node: its preview appears above it. Deselect: the graph is clean again.
+3. Header → **Overlays** popover for the display mode, or the **N-panel → Node
+   Peek** for the same controls plus resolution, refresh and clear.
+4. Want previews on every node at once? Set *Show Previews* to **All Nodes**.
+5. Press **Ctrl+Shift+P** to pin a preview so it survives changing the selection.
 
 ### Requirements
 
