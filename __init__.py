@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Node Peek — live rendered thumbnails above shader nodes.
-# Copyright (C) 2026 Aurélien — Résidence Principale (mlstr0m).
+# Copyright (C) 2026 Aurélien (mlstr0m).
 # Idea, UX design and testing: mlstr0m. Code written by Claude (Anthropic).
 """
 Node Peek
@@ -17,7 +17,7 @@ This is an independent, clean-room implementation inspired by the commercial
 
 bl_info = {
     "name": "Node Peek",
-    "author": "mlstr0m (Résidence Principale)",
+    "author": "mlstr0m",
     "version": (0, 6, 0),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Overlays popover  /  Sidebar (N) > Node Peek  /  Ctrl+Shift+P",

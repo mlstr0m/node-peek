@@ -87,7 +87,7 @@ node with the GPU. Your actual scene is never modified and never re-rendered.
 GPL-3.0-or-later. Source, issues and contributions:
 **https://github.com/mlstr0m/node-peek**
 
-Built by **mlstr0m** — [Résidence Principale](https://residenceprincipale.net).
+Built by **mlstr0m**.
 The idea, the UX design and the testing are mine; the code was written by
 **Claude** (Anthropic) from my specs, and hand-tested in Blender before each release.
 

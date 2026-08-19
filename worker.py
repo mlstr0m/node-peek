@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Node Peek — live rendered thumbnails above shader nodes.
-# Copyright (C) 2026 Aurélien — Résidence Principale (mlstr0m).
+# Copyright (C) 2026 Aurélien (mlstr0m).
 # Idea, UX design and testing: mlstr0m. Code written by Claude (Anthropic).
 """
 Persistent background worker for Node Peek.

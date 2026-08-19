@@ -134,7 +134,7 @@ Previews** re-renders everything ignoring the cache.
 
 ## Credits
 
-Built by **mlstr0m** — [Résidence Principale](https://residenceprincipale.net).
+Built by **mlstr0m**.
 
 The idea, the UX design and the testing are mine. The code itself was written by
 **Claude** (Anthropic), working from my specs and iterating on my feedback. Every
