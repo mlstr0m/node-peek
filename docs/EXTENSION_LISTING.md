@@ -88,6 +88,8 @@ GPL-3.0-or-later. Source, issues and contributions:
 **https://github.com/mlstr0m/node-peek**
 
 Built by **mlstr0m** — [Résidence Principale](https://residenceprincipale.net).
+The idea, the UX design and the testing are mine; the code was written by
+**Claude** (Anthropic) from my specs, and hand-tested in Blender before each release.
 
 *Independent, clean-room implementation inspired by the idea behind the
 commercial "Node Preview" add-on. It shares none of that product's code.*

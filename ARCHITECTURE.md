@@ -4,6 +4,9 @@ This document explains how Node Peek works internally, the invariants that keep
 it safe, and where to look when something breaks. Read it before changing
 anything non-trivial.
 
+> **Authorship:** the idea, the UX design and the testing are mlstr0m's. The
+> code in this repository was written by **Claude** (Anthropic) from those specs.
+
 ## The big picture
 
 Node Peek is **two processes**:

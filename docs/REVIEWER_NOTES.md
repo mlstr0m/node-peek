@@ -6,6 +6,10 @@
 Thanks for reviewing! Node Peek draws a rendered thumbnail above each node in
 the Shader Editor. Everything is open source: https://github.com/mlstr0m/node-peek
 
+For transparency: the idea, the UX design and the testing are mine; the code was
+written by **Claude** (Anthropic) from my specs, and hand-tested in Blender
+before every release.
+
 ## The one thing to look at: a background subprocess
 
 To keep the UI responsive, previews are **not** rendered in the main Blender

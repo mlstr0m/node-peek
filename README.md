@@ -18,6 +18,10 @@ responsive and **nothing is ever written into your .blend file**.
 
 Requires **Blender 4.2+**. Works on macOS, Linux, and Windows.
 
+> **How this was built:** the idea, the UX design and the testing are mine
+> (mlstr0m). The code was written by **Claude** (Anthropic) from my specs, and
+> hand-tested in Blender before every release.
+
 ## Install
 
 1. Download `node_peek.zip` (or zip the `node_peek/` folder yourself).
@@ -131,6 +135,10 @@ Previews** re-renders everything ignoring the cache.
 ## Credits
 
 Built by **mlstr0m** — [Résidence Principale](https://residenceprincipale.net).
+
+The idea, the UX design and the testing are mine. The code itself was written by
+**Claude** (Anthropic), working from my specs and iterating on my feedback. Every
+release was tested by hand in Blender before shipping.
 
 ## License
 

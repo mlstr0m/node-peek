@@ -1,5 +1,8 @@
 schema_version = "1.0.0"
 
+# Idea, UX design and testing by mlstr0m.
+# Code written by Claude (Anthropic) from those specs.
+
 id = "node_peek"
 version = "0.6.0"
 name = "Node Peek"

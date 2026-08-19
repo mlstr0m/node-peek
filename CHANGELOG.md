@@ -1,5 +1,7 @@
 # Changelog
 
+> Idea, UX and testing by mlstr0m. Code written by **Claude** (Anthropic).
+
 ## 0.6.0
 
 **Previews now follow your selection by default.** This changes the behaviour
