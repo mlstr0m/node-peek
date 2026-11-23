@@ -97,6 +97,60 @@ _last_material = None    # name of the material we last kicked a render for
 _last_fingerprint = None  # tree fingerprint of the last dispatched request
 _draw_handle = None      # SpaceNodeEditor draw handler
 
+# ---------------------------------------------------------------------------
+# Custom 2D image shader 
+# ---------------------------------------------------------------------------
+
+# Builtinn IMAGE_SCENE_LINEAR_TO_REC709_SRGB was added in Blender 5.0. Compiled lazily, cached for the session.
+
+_custom_image_shader = None
+
+
+def _get_image_shader():
+    """Return a 2D image shader that displays scene-linear textures correctly
+    on a POST_PIXEL target (which expects Rec.709 sRGB values).
+
+    Blender 5.0+ has IMAGE_SCENE_LINEAR_TO_REC709_SRGB built in. On older
+    versions we compile a custom shader doing the same linear→sRGB conversion,
+    plus the pixel→NDC transform that builtin 2D shaders handle implicitly.
+    """
+    global _custom_image_shader
+    try:
+        return gpu.shader.from_builtin('IMAGE_SCENE_LINEAR_TO_REC709_SRGB'), False
+    except ValueError:
+        pass
+
+    if _custom_image_shader is None:
+        vertex = """
+            uniform vec2 viewport_size;
+            in vec2 pos;
+            in vec2 texCoord;
+            out vec2 texCoord_interp;
+            void main() {
+                vec2 ndc = (pos / viewport_size) * 2.0 - 1.0;
+                gl_Position = vec4(ndc, 0.0, 1.0);
+                texCoord_interp = texCoord;
+            }
+        """
+        fragment = """
+            uniform sampler2D image;
+            in vec2 texCoord_interp;
+            out vec4 fragColor;
+
+            vec3 linear_to_srgb(vec3 c) {
+                vec3 lo = c * 12.92;
+                vec3 hi = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+                return mix(hi, lo, lessThanEqual(c, vec3(0.0031308)));
+            }
+
+            void main() {
+                vec4 tex = texture(image, texCoord_interp);
+                fragColor = vec4(linear_to_srgb(tex.rgb), tex.a);
+            }
+        """
+        _custom_image_shader = gpu.types.GPUShader(
+            vertex, fragment, name="NodePeekImage")
+    return _custom_image_shader, True
 
 # ---------------------------------------------------------------------------
 # Preferences
@@ -353,7 +407,7 @@ def _draw_callback():
     # POST_PIXEL targets use Rec.709 sRGB, so the plain IMAGE shader would
     # display those values as if they were already sRGB and make previews
     # visibly too dark.
-    shader = gpu.shader.from_builtin('IMAGE_SCENE_LINEAR_TO_REC709_SRGB')
+    shader, is_custom = _get_image_shader()
     gpu.state.blend_set('ALPHA')
 
     pad = 4  # pixels between node top and preview
@@ -404,6 +458,11 @@ def _draw_callback():
             },
         )
         shader.bind()
+        if is_custom:
+            # custom shader needs the viewport in pixels to map to NDC; the
+            # builtin IMAGE_SCENE_LINEAR_TO_REC709_SRGB does this internally
+            shader.uniform_float("viewport_size",
+                                 (float(region.width), float(region.height)))
         shader.uniform_sampler("image", tex)
         batch.draw(shader)
 
